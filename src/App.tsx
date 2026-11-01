@@ -5,7 +5,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GameEngine } from './game/engine';
-import { GameState, RunSummary } from './game/types';
+import { GameState, RunSummary, ActiveBuff } from './game/types';
 import { sound } from './game/audio';
 import { ArcadeHUD } from './components/ArcadeHUD';
 import { TitleOverlay } from './components/TitleOverlay';
@@ -35,6 +35,7 @@ export default function App() {
     comboProgress: 0,
     weapon: 'standard',
     highScore: 12450,
+    activeBuffs: [] as ActiveBuff[],
   });
 
   // Action: Start Game
@@ -239,6 +240,7 @@ export default function App() {
             weapon={hudState.weapon}
             isPaused={gameState === 'paused'}
             isMuted={isMuted}
+            activeBuffs={hudState.activeBuffs}
             onTogglePause={handleTogglePause}
             onToggleMute={handleToggleMute}
           />

@@ -14,12 +14,16 @@ import {
 import {
   ASTEROID_CONFIG,
   SAUCER_CONFIG,
+  POWERUP_CONFIG,
   getAsteroidSplit,
   getWaveParameters,
   calculateScore,
   updateComboState,
   isHighScore,
   insertHighScore,
+  getAsteroidDropChance,
+  shouldDropPowerup,
+  pickRandomPowerupType,
   HighScoreRecord,
   AsteroidSize,
 } from './rules';
@@ -33,6 +37,8 @@ import {
   BulletEntity,
   SaucerEntity,
   PowerUpEntity,
+  PowerUpType,
+  ActiveBuff,
   FloatingText,
   RunSummary,
 } from './types';
@@ -70,6 +76,7 @@ export class GameEngine {
   private trauma: number = 0;
   private heartbeatTimer: number = 0;
   private saucerSpawnTimer: number = 18;
+  private supplyDropTimer: number = 22;
   private nextEntityId: number = 1;
   private isAttractMode: boolean = true;
 
@@ -108,6 +115,7 @@ export class GameEngine {
     comboProgress: number;
     weapon: string;
     highScore: number;
+    activeBuffs: ActiveBuff[];
   }) => void;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -116,7 +124,7 @@ export class GameEngine {
     if (!context) throw new Error('Failed to get 2d context');
     this.ctx = context;
 
-    this.particles = new ParticleSystem(750);
+    this.particles = new ParticleSystem(950);
     this.highScores = loadHighScores();
     this.highScore = this.highScores.length > 0 ? this.highScores[0].score : 10000;
 
@@ -142,6 +150,8 @@ export class GameEngine {
       fireCooldown: 0,
       weapon: 'standard',
       weaponTimer: 0,
+      rapidFireTimer: 0,
+      shieldRegenTimer: 0,
       score: 0,
       accuracyStats: {
         shotsFired: 0,
@@ -375,9 +385,9 @@ export class GameEngine {
     sound.setSaucerWarble(true, isSmall);
   }
 
-  public fireBullet(fromPlayer = true, customAngle?: number) {
+  public fireBullet(fromPlayer = true, customAngle?: number, customSpeed?: number) {
     const angle = customAngle !== undefined ? customAngle : this.player.angle;
-    const speed = 620;
+    const speed = customSpeed !== undefined ? customSpeed : 620;
     // Gun muzzle offset at tip of ship
     const muzzleDist = this.player.radius + 4;
     const x = this.player.x + Math.sin(angle) * muzzleDist;
@@ -385,6 +395,13 @@ export class GameEngine {
 
     const vx = this.player.vx * 0.3 + Math.sin(angle) * speed;
     const vy = this.player.vy * 0.3 - Math.cos(angle) * speed;
+
+    const bulletColor =
+      this.player.weapon === 'spread'
+        ? '#f59e0b'
+        : this.player.rapidFireTimer > 0 || this.player.weapon === 'rapid'
+        ? '#22d3ee'
+        : '#38bdf8';
 
     this.bullets.push({
       id: this.nextEntityId++,
@@ -396,7 +413,7 @@ export class GameEngine {
       life: 1.1,
       maxLife: 1.1,
       fromPlayer,
-      color: this.player.weapon === 'spread' ? '#f59e0b' : '#38bdf8',
+      color: bulletColor,
       damage: 1,
     });
 
@@ -530,6 +547,15 @@ export class GameEngine {
         this.saucerSpawnTimer = params.saucerSpawnInterval;
       }
 
+      // Periodic supply drop beacon timer (every ~24-30s during active play)
+      this.supplyDropTimer -= dt;
+      if (this.supplyDropTimer <= 0) {
+        this.supplyDropTimer = 22 + Math.random() * 8;
+        if (this.powerups.length < 4) {
+          this.spawnPeriodicSupplyDrop();
+        }
+      }
+
       // Check wave clear
       if (this.asteroids.length === 0 && this.saucers.length === 0) {
         this.spawnWave(this.wave + 1);
@@ -540,6 +566,41 @@ export class GameEngine {
 
   private updatePlayer(dt: number) {
     const p = this.player;
+
+    // Temporary Buffs: Continuous Shield Regeneration
+    if (p.shieldRegenTimer > 0) {
+      p.shieldRegenTimer -= dt;
+      if (p.shields < p.maxShields) {
+        p.shields = Math.min(p.maxShields, p.shields + POWERUP_CONFIG.shield_regen.regenRate * dt);
+      }
+      // Emit emerald nano-repair sparks around player hull
+      if (Math.random() < 0.25) {
+        const sparkAngle = Math.random() * Math.PI * 2;
+        const sparkDist = p.radius + 5;
+        this.particles.emitThruster(
+          p.x + Math.cos(sparkAngle) * sparkDist,
+          p.y + Math.sin(sparkAngle) * sparkDist,
+          sparkAngle,
+          20
+        );
+      }
+      if (p.shieldRegenTimer <= 0) {
+        this.addFloatingText(p.x, p.y - 20, 'SHIELD REGEN EXPIRED', '#6ee7b7', 1.0);
+        this.notifyHud();
+      }
+    }
+
+    // Temporary Buffs: Rapid Fire Countdown
+    if (p.rapidFireTimer > 0) {
+      p.rapidFireTimer -= dt;
+      if (p.rapidFireTimer <= 0) {
+        if (p.weapon === 'rapid') {
+          p.weapon = 'standard';
+          this.addFloatingText(p.x, p.y - 20, 'RAPID FIRE EXPIRED', '#94a3b8', 1.0);
+          this.notifyHud();
+        }
+      }
+    }
 
     if (this.isAttractMode) {
       // Autonomous attract AI: gently steer and shoot nearest asteroid
@@ -621,15 +682,17 @@ export class GameEngine {
       }
 
       if (fire && p.fireCooldown <= 0) {
+        const hasRapid = p.rapidFireTimer > 0 || p.weapon === 'rapid';
         if (p.weapon === 'spread') {
           this.fireBullet(true, p.angle - 0.22);
           this.fireBullet(true, p.angle);
           this.fireBullet(true, p.angle + 0.22);
-          p.fireCooldown = 0.24;
+          p.fireCooldown = hasRapid ? 0.12 : 0.24;
           sound.playLaser('spread');
-        } else if (p.weapon === 'rapid') {
-          this.fireBullet(true, p.angle + (Math.random() - 0.5) * 0.08);
-          p.fireCooldown = 0.1;
+        } else if (hasRapid) {
+          // Rapid vulcan mode with accelerated firing interval and higher velocity
+          this.fireBullet(true, p.angle + (Math.random() - 0.5) * 0.05, 720);
+          p.fireCooldown = 0.08;
           sound.playLaser('rapid');
         } else {
           this.fireBullet(true, p.angle);
@@ -770,6 +833,16 @@ export class GameEngine {
       if (p.life <= 0) {
         this.powerups.splice(i, 1);
         continue;
+      }
+
+      // Magnetic pull toward player ship if within pickup proximity range
+      if (!this.isAttractMode && this.state === 'playing') {
+        const dist = Math.hypot(this.player.x - p.x, this.player.y - p.y);
+        if (dist < 90 && dist > 1) {
+          const pull = (1 - dist / 90) * 160;
+          p.vx += ((this.player.x - p.x) / dist) * pull * dt;
+          p.vy += ((this.player.y - p.y) / dist) * pull * dt;
+        }
       }
 
       p.x += p.vx * dt;
@@ -914,8 +987,9 @@ export class GameEngine {
       const comboText = this.comboMultiplier > 1 ? ` +${pts} (x${this.comboMultiplier})` : ` +${pts}`;
       this.addFloatingText(ast.x, ast.y, comboText, ast.color, 1.1);
 
-      // Power-up drop chance (10% from large/medium asteroids)
-      if (Math.random() < 0.12 && ast.size !== 'small') {
+      // Power-up spawning mechanism: occasionally drops collectible items on asteroid destruction
+      const dropChance = getAsteroidDropChance(ast.size, this.comboMultiplier);
+      if (this.powerups.length < 5 && shouldDropPowerup(Math.random(), dropChance)) {
         this.spawnPowerup(ast.x, ast.y);
       }
     } else {
@@ -967,8 +1041,10 @@ export class GameEngine {
 
     this.addFloatingText(saucer.x, saucer.y, `SAUCER +${pts}`, saucer.color, 1.3);
 
-    // High chance of dropping powerup
-    this.spawnPowerup(saucer.x, saucer.y);
+    // Guaranteed power-up drop on defeating hostile saucer
+    if (this.powerups.length < 5) {
+      this.spawnPowerup(saucer.x, saucer.y);
+    }
 
     if (this.saucers.length === 0) {
       sound.setSaucerWarble(false);
@@ -976,38 +1052,60 @@ export class GameEngine {
     this.notifyHud();
   }
 
-  private spawnPowerup(x: number, y: number) {
-    const types: PowerUpEntity['type'][] = ['shield', 'spread', 'rapid', 'emp'];
-    const type = types[Math.floor(Math.random() * types.length)];
+  public spawnPowerup(x: number, y: number, forceType?: PowerUpType) {
+    const type = forceType ?? pickRandomPowerupType(Math.random());
+    const config = POWERUP_CONFIG[type];
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 25 + Math.random() * 30;
+
     this.powerups.push({
       id: this.nextEntityId++,
       x,
       y,
-      vx: (Math.random() - 0.5) * 35,
-      vy: (Math.random() - 0.5) * 35,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
       type,
-      radius: 12,
-      life: 9.0, // 9 seconds to collect
+      radius: 13,
+      life: 10.0, // 10 seconds active duration before despawning
+      maxLife: 10.0,
       angle: 0,
+      color: config.color,
+      label: config.badge,
     });
+  }
+
+  public spawnPeriodicSupplyDrop() {
+    const fromLeft = Math.random() < 0.5;
+    const x = fromLeft ? 20 : this.width - 20;
+    const y = 80 + Math.random() * (this.height - 160);
+    const type = pickRandomPowerupType(Math.random());
+    this.spawnPowerup(x, y, type);
+    this.addFloatingText(x, y - 20, 'SUPPLY BEACON DETECTED', '#38bdf8', 1.8);
+    sound.playPowerup();
   }
 
   private collectPowerup(p: PowerUpEntity) {
     sound.playPowerup();
-    this.particles.emitShockwave(p.x, p.y, 35, '#38bdf8');
+    this.particles.emitShockwave(p.x, p.y, 45, p.color);
+    this.particles.emitExplosion(p.x, p.y, 22, p.color, 1.3);
 
-    if (p.type === 'shield') {
-      this.player.shields = this.player.maxShields;
-      this.addFloatingText(this.player.x, this.player.y - 25, 'SHIELD RESTORED', '#10b981', 1.2);
-    } else if (p.type === 'spread') {
-      this.player.weapon = 'spread';
-      this.player.weaponTimer = 12.0;
-      this.addFloatingText(this.player.x, this.player.y - 25, 'TRIPLE SPREAD LASER', '#f59e0b', 1.2);
-    } else if (p.type === 'rapid') {
+    if (p.type === 'rapid') {
+      // 12s Rapid-Fire vulcan cannon buff
+      this.player.rapidFireTimer = POWERUP_CONFIG.rapid.duration;
       this.player.weapon = 'rapid';
-      this.player.weaponTimer = 12.0;
-      this.addFloatingText(this.player.x, this.player.y - 25, 'RAPID VULCAN', '#06b6d4', 1.2);
+      this.addFloatingText(this.player.x, this.player.y - 25, 'RAPID VULCAN ACTIVE (+12s)', POWERUP_CONFIG.rapid.color, 1.3);
+    } else if (p.type === 'shield_regen') {
+      // Instant +25 shield boost and 10s continuous regeneration buff
+      this.player.shields = Math.min(this.player.maxShields, this.player.shields + 25);
+      this.player.shieldRegenTimer = POWERUP_CONFIG.shield_regen.duration;
+      this.addFloatingText(this.player.x, this.player.y - 25, 'SHIELD REGEN ACTIVE (+10s)', POWERUP_CONFIG.shield_regen.color, 1.3);
+    } else if (p.type === 'spread') {
+      // 12s 3-Way spread cannon buff
+      this.player.weapon = 'spread';
+      this.player.weaponTimer = POWERUP_CONFIG.spread.duration;
+      this.addFloatingText(this.player.x, this.player.y - 25, '3-WAY SPREAD ACTIVE (+12s)', POWERUP_CONFIG.spread.color, 1.3);
     } else if (p.type === 'emp') {
+      // Screen-clearing EMP pulse
       this.triggerEMP();
     }
 
@@ -1088,6 +1186,38 @@ export class GameEngine {
   }
 
   private notifyHud() {
+    const activeBuffs: ActiveBuff[] = [];
+
+    if (this.player.rapidFireTimer > 0) {
+      activeBuffs.push({
+        type: 'rapid',
+        label: POWERUP_CONFIG.rapid.label,
+        remaining: this.player.rapidFireTimer,
+        maxDuration: POWERUP_CONFIG.rapid.duration,
+        color: POWERUP_CONFIG.rapid.color,
+      });
+    }
+
+    if (this.player.shieldRegenTimer > 0) {
+      activeBuffs.push({
+        type: 'shield_regen',
+        label: POWERUP_CONFIG.shield_regen.label,
+        remaining: this.player.shieldRegenTimer,
+        maxDuration: POWERUP_CONFIG.shield_regen.duration,
+        color: POWERUP_CONFIG.shield_regen.color,
+      });
+    }
+
+    if (this.player.weapon === 'spread' && this.player.weaponTimer > 0) {
+      activeBuffs.push({
+        type: 'spread',
+        label: POWERUP_CONFIG.spread.label,
+        remaining: this.player.weaponTimer,
+        maxDuration: POWERUP_CONFIG.spread.duration,
+        color: POWERUP_CONFIG.spread.color,
+      });
+    }
+
     this.onHudChange?.({
       score: this.score,
       lives: this.player.lives,
@@ -1098,6 +1228,7 @@ export class GameEngine {
       comboProgress: this.comboProgress,
       weapon: this.player.weapon,
       highScore: this.highScore,
+      activeBuffs,
     });
   }
 
@@ -1182,6 +1313,16 @@ export class GameEngine {
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.arc(0, 0, p.radius + 6, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Active Shield Regeneration Aura (pulsing emerald energy)
+    if (p.shieldRegenTimer > 0) {
+      const pulse = Math.sin(performance.now() * 0.009) * 2.5;
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.85)';
+      ctx.lineWidth = 2.0;
+      ctx.beginPath();
+      ctx.arc(0, 0, p.radius + 9 + pulse, 0, Math.PI * 2);
       ctx.stroke();
     }
 
@@ -1306,30 +1447,32 @@ export class GameEngine {
 
   private renderPowerups(ctx: CanvasRenderingContext2D) {
     ctx.save();
+    const now = performance.now();
+
     for (let i = 0; i < this.powerups.length; i++) {
       const p = this.powerups[i];
-      ctx.save();
-      ctx.translate(p.x, p.y);
-      ctx.rotate(p.angle);
 
-      // Rotating diamond icon
-      let color = '#38bdf8';
-      let symbol = 'S';
-      if (p.type === 'shield') {
-        color = '#10b981';
-        symbol = 'SH';
-      } else if (p.type === 'spread') {
-        color = '#f59e0b';
-        symbol = '3X';
-      } else if (p.type === 'rapid') {
-        color = '#06b6d4';
-        symbol = 'RP';
-      } else if (p.type === 'emp') {
-        color = '#a855f7';
-        symbol = 'EMP';
+      // Expiration telegraph: flicker when less than 3s remaining
+      if (p.life < 3.0 && Math.floor(now / 100) % 2 === 0) {
+        continue;
       }
 
-      ctx.strokeStyle = color;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+
+      // Outer pulsing beacon ring
+      const pulseRingRadius = p.radius + 4 + Math.sin(now * 0.007 + i) * 3;
+      ctx.strokeStyle = p.color;
+      ctx.globalAlpha = 0.45;
+      ctx.lineWidth = 1.0;
+      ctx.beginPath();
+      ctx.arc(0, 0, pulseRingRadius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Rotating vector diamond badge
+      ctx.globalAlpha = 0.95;
+      ctx.rotate(p.angle);
+      ctx.strokeStyle = p.color;
       ctx.lineWidth = 1.8;
       ctx.beginPath();
       ctx.moveTo(0, -p.radius);
@@ -1339,12 +1482,13 @@ export class GameEngine {
       ctx.closePath();
       ctx.stroke();
 
-      // Text label inside
+      // Inner text badge symbol
+      ctx.rotate(-p.angle); // Keep text upright
       ctx.fillStyle = '#ffffff';
-      ctx.font = '8px monospace';
+      ctx.font = 'bold 9px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(symbol, 0, 0);
+      ctx.fillText(p.label, 0, 0);
 
       ctx.restore();
     }

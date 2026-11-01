@@ -25,6 +25,8 @@ export interface PlayerShip {
   fireCooldown: number;
   weapon: WeaponType;
   weaponTimer: number; // duration of powerup weapon
+  rapidFireTimer: number; // duration of Rapid-Fire buff
+  shieldRegenTimer: number; // duration of Shield Regeneration buff
   score: number;
   accuracyStats: {
     shotsFired: number;
@@ -78,7 +80,15 @@ export interface SaucerEntity {
   color: string;
 }
 
-export type PowerUpType = 'shield' | 'spread' | 'rapid' | 'emp';
+export type PowerUpType = 'rapid' | 'shield_regen' | 'spread' | 'emp';
+
+export interface ActiveBuff {
+  type: PowerUpType;
+  label: string;
+  remaining: number;
+  maxDuration: number;
+  color: string;
+}
 
 export interface PowerUpEntity {
   id: number;
@@ -89,7 +99,10 @@ export interface PowerUpEntity {
   type: PowerUpType;
   radius: number;
   life: number;
+  maxLife: number;
   angle: number;
+  color: string;
+  label: string;
 }
 
 export interface FloatingText {

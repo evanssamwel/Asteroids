@@ -1,6 +1,6 @@
 import React from 'react';
-import { Volume2, VolumeX, Pause, Play, Shield } from 'lucide-react';
-import { sound } from '../game/audio';
+import { Volume2, VolumeX, Pause, Play, Shield, Zap, RefreshCw } from 'lucide-react';
+import { ActiveBuff } from '../game/types';
 
 interface ArcadeHUDProps {
   score: number;
@@ -14,6 +14,7 @@ interface ArcadeHUDProps {
   weapon: string;
   isPaused: boolean;
   isMuted: boolean;
+  activeBuffs?: ActiveBuff[];
   onTogglePause: () => void;
   onToggleMute: () => void;
 }
@@ -30,6 +31,7 @@ export const ArcadeHUD: React.FC<ArcadeHUDProps> = ({
   weapon,
   isPaused,
   isMuted,
+  activeBuffs = [],
   onTogglePause,
   onToggleMute,
 }) => {
@@ -64,19 +66,45 @@ export const ArcadeHUD: React.FC<ArcadeHUDProps> = ({
           )}
         </div>
 
-        {/* Center: Wave & Weapon Indicator */}
-        <div className="flex flex-col items-center">
+        {/* Center: Wave & Active Temporary Buff Badges */}
+        <div className="flex flex-col items-center gap-1.5">
           <div className="px-3 py-1 bg-cyan-950/40 border border-cyan-500/30 rounded-xs">
             <span className="text-xs font-mono tracking-widest text-cyan-400 uppercase">
               SECTOR 0{wave}
             </span>
           </div>
 
-          {weapon !== 'standard' && (
-            <div className="mt-1 px-2 py-0.5 bg-amber-950/60 border border-amber-500/50 rounded-xs">
-              <span className="text-[10px] font-mono tracking-wider text-amber-300 uppercase">
-                {weapon === 'spread' ? '3-WAY SPREAD' : 'RAPID VULCAN'}
-              </span>
+          {/* Active Buffs (Rapid Fire, Shield Regen, Spread) */}
+          {activeBuffs.length > 0 && (
+            <div className="flex flex-col items-center gap-1">
+              {activeBuffs.map((buff) => {
+                const ratio = Math.max(0, Math.min(1, buff.remaining / buff.maxDuration));
+                return (
+                  <div
+                    key={buff.type}
+                    className="flex items-center gap-2 px-2 py-0.5 bg-neutral-950/80 border rounded-xs font-mono text-[10px] tracking-wider"
+                    style={{ borderColor: `${buff.color}70` }}
+                  >
+                    {buff.type === 'shield_regen' ? (
+                      <RefreshCw size={11} className="text-emerald-400 animate-spin" />
+                    ) : (
+                      <Zap size={11} className="text-cyan-400 animate-pulse" />
+                    )}
+                    <span style={{ color: buff.color }} className="font-bold uppercase">
+                      {buff.label} ({buff.remaining.toFixed(1)}s)
+                    </span>
+                    <div className="w-12 h-1 bg-neutral-900 rounded-xs overflow-hidden">
+                      <div
+                        className="h-full transition-all duration-100"
+                        style={{
+                          width: `${ratio * 100}%`,
+                          backgroundColor: buff.color,
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

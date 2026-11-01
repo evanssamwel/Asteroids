@@ -157,3 +157,62 @@ export function insertHighScore(
   list.sort((a, b) => b.score - a.score);
   return list.slice(0, maxEntries);
 }
+
+/**
+ * Power-Up configuration and drop algorithms.
+ */
+export const POWERUP_CONFIG = {
+  rapid: {
+    label: 'RAPID VULCAN',
+    badge: 'RF',
+    color: '#06b6d4',
+    duration: 12.0,
+    description: 'Ultra-fast firing rate with boosted projectile speed',
+  },
+  shield_regen: {
+    label: 'SHIELD REGEN',
+    badge: 'SR',
+    color: '#10b981',
+    duration: 10.0,
+    regenRate: 25, // shields/sec
+    description: 'Instant +25 shield boost and continuous shield regeneration',
+  },
+  spread: {
+    label: '3-WAY SPREAD',
+    badge: '3X',
+    color: '#f59e0b',
+    duration: 12.0,
+    description: 'Fires three converging vector energy beams',
+  },
+  emp: {
+    label: 'EMP BURST',
+    badge: 'EMP',
+    color: '#a855f7',
+    duration: 0, // Instant detonation
+    description: 'Shockwave pulse clearing nearby threats',
+  },
+} as const;
+
+export type PowerUpConfigKey = keyof typeof POWERUP_CONFIG;
+
+export function getAsteroidDropChance(size: AsteroidSize, comboMultiplier = 1): number {
+  let baseChance = 0.12;
+  if (size === 'large') baseChance = 0.22;
+  else if (size === 'medium') baseChance = 0.15;
+  else baseChance = 0.08;
+
+  const comboBonus = Math.min(0.12, (comboMultiplier - 1) * 0.03);
+  return Math.min(0.40, baseChance + comboBonus);
+}
+
+export function shouldDropPowerup(randomRoll: number, dropChance: number): boolean {
+  return randomRoll < dropChance;
+}
+
+export function pickRandomPowerupType(randomRoll: number): PowerUpConfigKey {
+  if (randomRoll < 0.30) return 'rapid';
+  if (randomRoll < 0.60) return 'shield_regen';
+  if (randomRoll < 0.85) return 'spread';
+  return 'emp';
+}
+

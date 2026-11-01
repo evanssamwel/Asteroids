@@ -8,6 +8,9 @@ import {
   isHighScore,
   insertHighScore,
   HighScoreRecord,
+  getAsteroidDropChance,
+  shouldDropPowerup,
+  pickRandomPowerupType,
 } from './rules';
 
 test('calculateScore applies combo multiplier up to maximum', () => {
@@ -78,3 +81,21 @@ test('high score qualification and sorted insertion', () => {
   assert.equal(updated[1].initials, 'MAX');
   assert.equal(updated[2].initials, 'NEO');
 });
+
+test('powerup drop chance scales with asteroid size and combo', () => {
+  const largeChance = getAsteroidDropChance('large', 1);
+  const smallChance = getAsteroidDropChance('small', 1);
+  assert.ok(largeChance > smallChance);
+
+  const boostedChance = getAsteroidDropChance('large', 4);
+  assert.ok(boostedChance > largeChance);
+
+  assert.equal(shouldDropPowerup(0.05, 0.20), true);
+  assert.equal(shouldDropPowerup(0.35, 0.20), false);
+
+  assert.equal(pickRandomPowerupType(0.15), 'rapid');
+  assert.equal(pickRandomPowerupType(0.45), 'shield_regen');
+  assert.equal(pickRandomPowerupType(0.75), 'spread');
+  assert.equal(pickRandomPowerupType(0.95), 'emp');
+});
+
