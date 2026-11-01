@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-arcade: ui-monospace, "Courier New", monospace;
+    --font-hud: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --font-heading: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+}
+
+.font-arcade {
+  font-family: var(--font-arcade);
+}
+
+.font-hud {
+  font-family: var(--font-hud);
+}
+
+.font-heading {
+  font-family: var(--font-heading);
+}
+
+/* Subtle CRT curvature and phosphor scanline effect (pointer-events-none) */
+.crt-overlay {
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%, 
+    rgba(0, 0, 0, 0.35) 50%
+  ), linear-gradient(
+    90deg,
+    rgba(255, 0, 0, 0.03),
+    rgba(0, 255, 0, 0.01),
+    rgba(0, 0, 255, 0.03)
+  );
+  background-size: 100% 3px, 6px 100%;
+}
+
+.crt-vignette {
+  box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.85), inset 0 0 30px rgba(0, 0, 0, 0.95);
+}
+
+/* Vector Neon Text Glows */
+.glow-cyan {
+  text-shadow: 0 0 6px rgba(6, 182, 212, 0.7), 0 0 16px rgba(6, 182, 212, 0.4);
+}
+
+.glow-emerald {
+  text-shadow: 0 0 6px rgba(16, 185, 129, 0.7), 0 0 16px rgba(16, 185, 129, 0.4);
+}
+
+.glow-amber {
+  text-shadow: 0 0 6px rgba(245, 158, 11, 0.7), 0 0 16px rgba(245, 158, 11, 0.4);
+}
+
+.glow-rose {
+  text-shadow: 0 0 6px rgba(244, 63, 94, 0.7), 0 0 16px rgba(244, 63, 94, 0.4);
+}

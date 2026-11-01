@@ -1,0 +1,6 @@
+{
+  "name": "Vector Void - Retro Arcade Remake",
+  "description": "A high-fidelity retro vector arcade remake featuring frame-rate independent physics, Web Audio procedural sound synthesis, particle dynamics, and local high-score persistence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
