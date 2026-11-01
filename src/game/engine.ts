@@ -429,7 +429,7 @@ export class GameEngine {
     // Vaporize small asteroids and damage larger ones
     const toShatter = [...this.asteroids];
     toShatter.forEach((ast) => {
-      this.destroyAsteroid(ast, false);
+      this.destroyAsteroid(ast, true);
     });
 
     // Destroy saucers
@@ -886,11 +886,19 @@ export class GameEngine {
 
     // Sound and particle juice
     sound.playExplosion(ast.size);
-    this.particles.emitAsteroidShatter(ast.x, ast.y, ast.radius, ast.color);
     this.trauma = Math.min(1.0, this.trauma + (ast.size === 'large' ? 0.35 : 0.2));
     this.hitstopTimer = 0.04;
 
     if (byPlayerBullet) {
+      // Trigger colorful particle explosion effect whenever an asteroid is destroyed by player fire
+      this.particles.emitColorfulAsteroidExplosion(
+        ast.x,
+        ast.y,
+        ast.radius,
+        ast.color,
+        this.comboMultiplier
+      );
+
       this.runStats.asteroidsDestroyed++;
       // Combo increment
       this.comboMultiplier = Math.min(5, this.comboMultiplier + 1);
@@ -910,6 +918,9 @@ export class GameEngine {
       if (Math.random() < 0.12 && ast.size !== 'small') {
         this.spawnPowerup(ast.x, ast.y);
       }
+    } else {
+      // Environmental or collision destruction
+      this.particles.emitAsteroidShatter(ast.x, ast.y, ast.radius, ast.color);
     }
 
     // Split into children

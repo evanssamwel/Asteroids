@@ -23,7 +23,7 @@ export class ParticleSystem {
   private capacity: number;
   private head: number = 0;
 
-  constructor(capacity = 650) {
+  constructor(capacity = 950) {
     this.capacity = capacity;
     this.pool = new Array(capacity);
     for (let i = 0; i < capacity; i++) {
@@ -102,6 +102,74 @@ export class ParticleSystem {
     }
   }
 
+  /**
+   * Colorful Particle Explosion Effect triggered when an asteroid is destroyed by player fire.
+   * Emits a brilliant spectrum of neon sparks, high-velocity streak lines, tumbling vector shards,
+   * and concentric expanding shockwave rings, all governed by the game's physics loop and fading out smoothly.
+   */
+  public emitColorfulAsteroidExplosion(
+    x: number,
+    y: number,
+    radius: number,
+    baseColor = '#38bdf8',
+    comboMultiplier = 1
+  ) {
+    // Saturated multi-chromatic neon spectrum
+    const neonSpectrum = [
+      '#06b6d4', // Cyan
+      '#22d3ee', // Bright Cyan
+      '#f43f5e', // Hot Pink / Rose
+      '#ec4899', // Electric Magenta
+      '#fbbf24', // Amber Gold
+      '#f59e0b', // Sunset Orange
+      '#10b981', // Emerald
+      '#34d399', // Mint
+      '#a855f7', // Vivid Purple
+      '#c084fc', // Neon Violet
+      '#ffffff', // Superheated White Core
+    ];
+
+    // Scale particle count with asteroid size and combo level
+    const count = Math.min(60, Math.max(26, Math.floor(radius * 0.85) + comboMultiplier * 4));
+    const speedScale = 1.0 + Math.min(0.5, (comboMultiplier - 1) * 0.12);
+
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.35;
+      // Varied velocities: fast outward streaks, medium tumbling shards, slow glowing embers
+      const speed = (50 + Math.random() * 220) * speedScale;
+      const vx = Math.cos(angle) * speed;
+      const vy = Math.sin(angle) * speed;
+
+      // Color from vibrant neon spectrum with bias towards asteroid's own neon hue
+      const color =
+        Math.random() < 0.25
+          ? baseColor
+          : neonSpectrum[Math.floor(Math.random() * neonSpectrum.length)];
+
+      const life = 0.45 + Math.random() * 0.55;
+      const size = 1.5 + Math.random() * 4.0;
+
+      // Mix particle shapes for rich visual depth
+      const roll = Math.random();
+      let shape: 'dot' | 'line' | 'shard' = 'dot';
+      if (roll < 0.45) {
+        shape = 'line'; // Fast streak line pointing along trajectory
+      } else if (roll < 0.8) {
+        shape = 'shard'; // Tumbling polygonal fragment
+      }
+
+      this.spawn(x, y, vx, vy, life, size, color, shape, (Math.random() - 0.5) * 10);
+    }
+
+    // Glowing expanding shockwave rings
+    this.emitShockwave(x, y, Math.max(30, radius * 1.5), baseColor);
+    if (radius >= 30) {
+      // Secondary chromatic shockwave for large asteroids
+      const secondaryColor = neonSpectrum[Math.floor(Math.random() * neonSpectrum.length)];
+      this.emitShockwave(x, y, radius * 1.9, secondaryColor);
+    }
+  }
+
   public emitAsteroidShatter(x: number, y: number, radius: number, color = '#38bdf8') {
     const count = Math.min(32, Math.floor(radius * 0.9));
     for (let i = 0; i < count; i++) {
@@ -137,6 +205,9 @@ export class ParticleSystem {
   }
 
   public update(dt: number, width: number, height: number) {
+    // Frame-rate independent drag constant
+    const drag = Math.pow(0.965, dt * 60);
+
     for (let i = 0; i < this.capacity; i++) {
       const p = this.pool[i];
       if (!p.active) continue;
@@ -147,15 +218,15 @@ export class ParticleSystem {
         continue;
       }
 
-      // Drag friction
-      p.vx *= 0.975;
-      p.vy *= 0.975;
+      // Physics integration: drag deceleration and movement
+      p.vx *= drag;
+      p.vy *= drag;
 
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.angle += p.rotSpeed * dt;
 
-      // Wrap particles gently
+      // Toroidal screen wrapping
       if (p.x < 0) p.x += width;
       if (p.x > width) p.x -= width;
       if (p.y < 0) p.y += height;
@@ -178,13 +249,14 @@ export class ParticleSystem {
       if (p.shape === 'ring') {
         const currentRadius = p.size * (1 - alpha);
         ctx.beginPath();
-        ctx.arc(p.x, p.y, currentRadius, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, Math.max(0.5, currentRadius), 0, Math.PI * 2);
         ctx.stroke();
       } else if (p.shape === 'line') {
         // Render streak in direction of velocity
-        const len = Math.min(12, Math.hypot(p.vx, p.vy) * 0.08 + 2);
-        const normX = p.vx !== 0 || p.vy !== 0 ? p.vx / Math.hypot(p.vx, p.vy) : 0;
-        const normY = p.vx !== 0 || p.vy !== 0 ? p.vy / Math.hypot(p.vx, p.vy) : 0;
+        const speed = Math.hypot(p.vx, p.vy);
+        const len = Math.min(18, speed * 0.08 + 2);
+        const normX = speed > 0.001 ? p.vx / speed : 0;
+        const normY = speed > 0.001 ? p.vy / speed : 0;
 
         ctx.beginPath();
         ctx.moveTo(p.x, p.y);
@@ -203,7 +275,7 @@ export class ParticleSystem {
         ctx.restore();
       } else {
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, Math.max(0.5, p.size * alpha), 0, Math.PI * 2);
         ctx.fill();
       }
     }
